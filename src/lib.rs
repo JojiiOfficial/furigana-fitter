@@ -55,12 +55,11 @@ pub fn fit_furigana(word: &str, raw_furigana: &str) -> Result<String, FittingErr
 fn convert_to_furigana(fitted: Vec<SingleReadingSegment>) -> String {
     let mut fitted_iter = fitted.iter();
 
-    if fitted_iter.len() == 0 {
+    let Some(first_fitted) = fitted_iter.next() else {
         return "".to_string();
-    }
+    };
 
-    // Checked length
-    let first = match fitted_iter.next().unwrap() {
+    let first = match first_fitted {
         SingleReadingSegment::Kana(reading) => Segment::Kana(reading.to_string()),
         SingleReadingSegment::Kanji { kanji, reading } => Segment::Kanji {
             kanji: kanji.to_string(),
@@ -110,11 +109,10 @@ fn break_up_furigana_into_singles(furigana: Furigana<&str>) -> Vec<SingleReading
         .flat_map(|part| match part {
             SegmentRef::Kana(reading) => vec![SingleReadingSegment::Kana(reading.to_owned())],
             SegmentRef::Kanji { kanji, readings } => {
-                if readings.len() == 1 {
+                if let Some(first_reading) = readings.first() {
                     return vec![SingleReadingSegment::Kanji {
                         kanji: kanji.to_owned(),
-                        // Checked length
-                        reading: readings.first().unwrap().to_string(),
+                        reading: first_reading.to_string(),
                     }];
                 }
 
