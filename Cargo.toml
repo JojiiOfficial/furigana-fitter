@@ -1,0 +1,10 @@
+[package]
+name = "furigana_fitter"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+jp_utils = { version = "0.1.4", features = ["furigana"] }
+tinyvec = "1.6.0"
