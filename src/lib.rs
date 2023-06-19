@@ -1,5 +1,5 @@
 use jp_utils::furigana::{
-    segment::{Segment, SegmentRef},
+    segment::{AsSegment, Segment},
     seq::FuriSequence,
     Furigana,
 };
@@ -56,25 +56,16 @@ pub fn fit_furigana(word: &str, raw_furigana: &str) -> Result<String, FittingErr
 fn break_up_furigana_into_singles(furigana: Furigana<&str>) -> Vec<SingleReadingSegment> {
     furigana
         .into_iter()
-        .flat_map(|part| match part {
-            SegmentRef::Kana(reading) => vec![SingleReadingSegment::Kana(reading.to_string())],
-            SegmentRef::Kanji { kanji, readings } => {
-                if let Some(first_reading) = readings.first() {
-                    return vec![SingleReadingSegment::Kanji {
-                        kanji: kanji.to_string(),
-                        reading: first_reading.to_string(),
-                    }];
-                }
-
-                kanji
-                    .chars()
-                    .zip(readings.iter())
-                    .map(|(kanji, reading)| SingleReadingSegment::Kanji {
-                        kanji: kanji.to_string(),
-                        reading: reading.to_string(),
-                    })
-                    .collect()
-            }
+        .flat_map(|part| {
+            part.reading_iter()
+                .map(|(japanese, furigana)| match furigana {
+                    Some(furigana) => SingleReadingSegment::Kanji {
+                        kanji: japanese,
+                        reading: furigana,
+                    },
+                    None => SingleReadingSegment::Kana(japanese),
+                })
+                .collect::<Vec<SingleReadingSegment>>()
         })
         .collect()
 }
@@ -84,12 +75,10 @@ fn fit_furigana_onto_word<'a>(
     word: &str,
 ) -> Result<Vec<SingleReadingSegment>, FittingError> {
     let mut remaining_word = word.to_string();
-    println!("Remaining word: {}", remaining_word);
     furigana
         .iter()
         .enumerate()
         .map(|(i, part)| {
-            println!("Part: {:?} Remaining: {:?}", part, remaining_word);
             if remaining_word.is_empty() {
                 return Err(FittingError::WordTooShort);
             }
