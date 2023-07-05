@@ -9,10 +9,10 @@ pub fn handle_kuru(word: &str) -> String {
     let is_te_form = word.starts_with("来て");
     let is_ta_form = word.starts_with("来た");
     if is_formal || is_te_form || is_ta_form {
-        return format!("[来|き]{}", tail).to_string();
+        return format!("[来|き]{}", tail);
     }
 
-    return format!("[来|こ]{}", tail).to_string();
+    format!("[来|こ]{}", tail)
 }
 
 pub fn handle_suru(word: &str) -> String {
@@ -26,8 +26,8 @@ pub fn handle_suru(word: &str) -> String {
     let is_ta_form = word.starts_with("為た");
     let is_imperative = word.starts_with("為ろ");
     if is_formal || is_te_form || is_ta_form || is_imperative {
-        return format!("[為|し]{}", tail).to_string();
+        return format!("[為|し]{}", tail);
     }
 
-    return format!("[為|さ]{}", tail).to_string();
+    format!("[為|さ]{}", tail)
 }
