@@ -41,54 +41,52 @@ fn break_up_furigana_into_singles(furigana: Furigana<&str>) -> Vec<Reading> {
 
 fn fit_furigana_onto_word<'a>(
     furigana: Vec<Reading>,
-    word: &str,
+    mut word: &str,
 ) -> Result<Vec<Reading>, FittingError> {
-    let mut remaining_word = word.to_string();
     furigana
         .iter()
         .enumerate()
         .map(|(i, part)| {
-            if remaining_word.is_empty() {
+            if word.is_empty() {
                 return Err(FittingError::WordTooShort);
             }
 
             match (part.kanji(), part.kana()) {
                 (Some(kanji), kana) => {
-                    if remaining_word.starts_with(kanji) {
-                        remaining_word =
-                            remaining_word.chars().skip(kanji.chars().count()).collect();
+                    if let Some(remaining) = word.strip_prefix(kanji) {
+                        word = remaining;
                         return Ok(part.clone());
                     }
 
-                    if !remaining_word.starts_with(kana) {
-                        return Err(FittingError::FuriganaDiffers);
+                    if let Some(remaining) = word.strip_prefix(kana) {
+                        word = remaining;
+                        return Ok(Reading::new(kana.to_string()));
                     }
 
-                    remaining_word = remaining_word.chars().skip(kana.chars().count()).collect();
-                    Ok(Reading::new(kana.to_string()))
+                    return Err(FittingError::FuriganaDiffers);
                 }
                 (None, kana) => {
                     // Assumption: the kana parts can only change at the end of the word
 
                     let is_last = i == furigana.len() - 1;
                     if is_last {
-                        let result = Ok(Reading::new(remaining_word.clone()));
-                        remaining_word.clear();
+                        let result = Ok(Reading::new(word.to_string()));
+                        word = "";
                         return result;
                     }
 
-                    if !remaining_word.starts_with(kana) {
-                        return Err(FittingError::FuriganaDiffers);
+                    if let Some(remaining) = word.strip_prefix(kana) {
+                        word = remaining;
+                        return Ok(part.clone());
                     }
 
-                    remaining_word = remaining_word.chars().skip(kana.chars().count()).collect();
-                    Ok(part.clone())
+                    return Err(FittingError::FuriganaDiffers);
                 }
             }
         })
         .collect::<Result<Vec<Reading>, FittingError>>()
         .and_then(|result| {
-            if !remaining_word.is_empty() {
+            if !word.is_empty() {
                 return Err(FittingError::WordTooLong);
             }
 
