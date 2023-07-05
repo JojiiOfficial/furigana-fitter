@@ -5,7 +5,7 @@ use std::vec;
 
 use jp_utils::{
     furi::{
-        segment::{encode::FuriEncoder, kanji::Kanji, AsSegment},
+        segment::{encode::FuriEncoder, kanji::KanjiRef, AsSegment},
         Furigana,
     },
     reading::Reading,
@@ -57,16 +57,15 @@ fn fit_furigana_onto_word<'a>(
                     if remaining_word.starts_with(kanji) {
                         remaining_word =
                             remaining_word.chars().skip(kanji.chars().count()).collect();
-                        return Ok(Reading::new_with_kanji(kana.to_string(), kanji.to_string()));
+                        return Ok(part.clone());
                     }
 
-                    if remaining_word.starts_with(kana) {
-                        remaining_word =
-                            remaining_word.chars().skip(kana.chars().count()).collect();
-                        return Ok(Reading::new(kana.to_string()));
+                    if !remaining_word.starts_with(kana) {
+                        return Err(FittingError::FuriganaDiffers);
                     }
 
-                    return Err(FittingError::FuriganaDiffers);
+                    remaining_word = remaining_word.chars().skip(kana.chars().count()).collect();
+                    Ok(Reading::new(kana.to_string()))
                 }
                 (None, kana) => {
                     // Assumption: the kana parts can only change at the end of the word
@@ -83,8 +82,7 @@ fn fit_furigana_onto_word<'a>(
                     }
 
                     remaining_word = remaining_word.chars().skip(kana.chars().count()).collect();
-
-                    return Ok(Reading::new(kana.to_string()));
+                    Ok(part.clone())
                 }
             }
         })
@@ -94,7 +92,7 @@ fn fit_furigana_onto_word<'a>(
                 return Err(FittingError::WordTooLong);
             }
 
-            return Ok(result);
+            Ok(result)
         })
 }
 
@@ -105,7 +103,7 @@ fn convert_to_furigana(fitted: Vec<Reading>) -> String {
     let mut encoder = FuriEncoder::new(&mut result_string);
 
     let Some(last_segment) = fitted_iter.next() else {
-        return "".to_string();
+        return result_string;
     };
 
     let mut last_kanji = match (last_segment.kanji(), last_segment.kana()) {
@@ -113,31 +111,31 @@ fn convert_to_furigana(fitted: Vec<Reading>) -> String {
             encoder.write_kana(kana);
             (None, vec![])
         }
-        (Some(kanji), kana) => (Some(kanji.to_string()), vec![kana.to_string()]),
+        (Some(kanji), kana) => (Some(kanji.to_string()), vec![kana]),
     };
 
     last_kanji = fitted_iter.fold(last_kanji, |last_kanji, segment| {
         match (segment.kanji(), segment.kana()) {
             (None, kana) => match last_kanji {
                 (Some(last_kanji), mut readings) => {
-                    encoder.write_kanji(Kanji::new(last_kanji, readings.as_slice()));
+                    encoder.write_kanji(KanjiRef::new(&last_kanji, readings.as_slice()));
                     encoder.write_kana(kana);
                     readings.clear();
                     (None, readings)
                 }
-                (None, empty_readings) => {
+                _ => {
                     encoder.write_kana(kana);
-                    (None, empty_readings)
+                    last_kanji
                 }
             },
             (Some(kanji), kana) => match last_kanji {
                 (Some(mut last_kanji), mut readings) => {
                     last_kanji.push_str(kanji);
-                    readings.push(kana.to_string());
+                    readings.push(kana);
                     (Some(last_kanji), readings)
                 }
                 (None, mut readings) => {
-                    readings.push(kana.to_string());
+                    readings.push(kana);
                     (Some(kanji.to_string()), readings)
                 }
             },
@@ -145,8 +143,8 @@ fn convert_to_furigana(fitted: Vec<Reading>) -> String {
     });
 
     if let (Some(kanji), readings) = last_kanji {
-        encoder.write_kanji(Kanji::new(kanji.to_string(), readings.as_slice()));
+        encoder.write_kanji(KanjiRef::new(&kanji, readings.as_slice()));
     }
 
-    return result_string;
+    result_string
 }
