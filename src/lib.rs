@@ -1,37 +1,19 @@
-use jp_utils::furigana::{
-    segment::{AsSegment, Segment},
-    seq::FuriSequence,
+mod exceptions;
+pub mod fitting_error;
+
+use std::vec;
+
+use jp_utils::furi::{
+    segment::{encode::FuriEncoder, kanji::Kanji, AsSegment},
     Furigana,
 };
-use tinyvec::tiny_vec;
 
-#[derive(Debug, PartialEq)]
-pub enum FittingError {
-    FuriganaDiffers,
-    WordTooLong,
-    WordTooShort,
-}
+use crate::fitting_error::FittingError;
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 enum SingleReadingSegment {
     Kana(String),
     Kanji { kanji: String, reading: String },
-}
-
-impl std::fmt::Display for FittingError {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        match self {
-            FittingError::FuriganaDiffers => {
-                write!(f, "The furigana differs from the provided word")
-            }
-            FittingError::WordTooLong => {
-                write!(f, "The word is too long to fit the furigana")
-            }
-            FittingError::WordTooShort => {
-                write!(f, "The word is too short to fit the furigana")
-            }
-        }
-    }
 }
 
 pub fn fit_furigana(word: &str, raw_furigana: &str) -> Result<String, FittingError> {
@@ -39,11 +21,11 @@ pub fn fit_furigana(word: &str, raw_furigana: &str) -> Result<String, FittingErr
     let parsed_furigana_string = parsed_furigana.kanji_str();
 
     if parsed_furigana_string == "来る" {
-        return Ok(handle_kuru(word));
+        return Ok(exceptions::handle_kuru(word));
     }
 
     if parsed_furigana_string == "為る" {
-        return Ok(handle_suru(word));
+        return Ok(exceptions::handle_suru(word));
     }
 
     let broken_up = break_up_furigana_into_singles(parsed_furigana);
@@ -58,12 +40,12 @@ fn break_up_furigana_into_singles(furigana: Furigana<&str>) -> Vec<SingleReading
         .into_iter()
         .flat_map(|part| {
             part.reading_iter()
-                .map(|(japanese, furigana)| match furigana {
-                    Some(furigana) => SingleReadingSegment::Kanji {
-                        kanji: japanese,
-                        reading: furigana,
+                .map(|reading| match reading.kanji() {
+                    Some(kanji) => SingleReadingSegment::Kanji {
+                        kanji: kanji.to_string(),
+                        reading: reading.kana().to_string(),
                     },
-                    None => SingleReadingSegment::Kana(japanese),
+                    None => SingleReadingSegment::Kana(reading.kana().to_string()),
                 })
                 .collect::<Vec<SingleReadingSegment>>()
         })
@@ -140,86 +122,54 @@ fn fit_furigana_onto_word<'a>(
 fn convert_to_furigana(fitted: Vec<SingleReadingSegment>) -> String {
     let mut fitted_iter = fitted.iter();
 
-    let Some(first_fitted) = fitted_iter.next() else {
+    let mut result_string = String::new();
+    let mut encoder = FuriEncoder::new(&mut result_string);
+
+    let Some(last_segment) = fitted_iter.next() else {
         return "".to_string();
     };
 
-    let first = match first_fitted {
-        SingleReadingSegment::Kana(reading) => Segment::Kana(reading.to_string()),
-        SingleReadingSegment::Kanji { kanji, reading } => Segment::Kanji {
-            kanji: kanji.to_string(),
-            readings: tiny_vec![reading.to_string()],
-        },
+    let mut last_kanji = match last_segment {
+        SingleReadingSegment::Kana(kana) => {
+            encoder.write_kana(kana);
+            (None, vec![])
+        }
+        SingleReadingSegment::Kanji { kanji, reading } => {
+            (Some(kanji.to_string()), vec![reading.to_owned()])
+        }
     };
 
-    let mut result_segments = vec![first];
+    last_kanji = fitted_iter.fold(last_kanji, |last_kanji, segment| match segment {
+        SingleReadingSegment::Kana(kana) => match last_kanji {
+            (Some(last_kanji), mut readings) => {
+                encoder.write_kanji(Kanji::new(last_kanji, readings.as_slice()));
+                encoder.write_kana(kana);
+                readings.clear();
+                (None, readings)
+            }
+            (None, empty_readings) => {
+                encoder.write_kana(kana);
+                (None, empty_readings)
+            }
+        },
+        SingleReadingSegment::Kanji { kanji, reading } => match last_kanji {
+            (Some(mut last_kanji), mut readings) => {
+                last_kanji.push_str(kanji);
+                readings.push(reading.to_owned());
+                (Some(last_kanji), readings)
+            }
+            (None, mut readings) => {
+                readings.push(reading.to_owned());
+                (Some(kanji.to_string()), readings)
+            }
+        },
+    });
 
-    while let Some(segment) = fitted_iter.next() {
-        // There's always something in the vector
-        let last_segment = result_segments.last_mut().unwrap();
-
-        match segment {
-            SingleReadingSegment::Kana(reading) => match last_segment {
-                Segment::Kana(last_reading) => {
-                    last_reading.push_str(reading);
-                }
-                Segment::Kanji { .. } => {
-                    result_segments.push(Segment::Kana(reading.to_string()));
-                }
-            },
-            SingleReadingSegment::Kanji { kanji, reading } => match last_segment {
-                Segment::Kana(_) => {
-                    result_segments.push(Segment::Kanji {
-                        kanji: kanji.to_string(),
-                        readings: tiny_vec![reading.to_string()],
-                    });
-                }
-                Segment::Kanji {
-                    kanji: last_kanji,
-                    readings: last_readings,
-                } => {
-                    last_kanji.push_str(kanji);
-                    last_readings.push(reading.to_string());
-                }
-            },
-        }
+    if let (Some(kanji), readings) = last_kanji {
+        encoder.write_kanji(Kanji::new(kanji.to_string(), readings.as_slice()));
     }
 
-    FuriSequence::from(result_segments).to_string()
-}
-
-fn handle_kuru(word: &str) -> String {
-    if word == "来る" {
-        return "[来|く]る".to_string();
-    }
-
-    let tail = word.chars().skip(1).collect::<String>();
-
-    let is_formal = word.starts_with("来ま");
-    let is_te_form = word.starts_with("来て");
-    let is_ta_form = word.starts_with("来た");
-    if is_formal || is_te_form || is_ta_form {
-        return format!("[来|き]{}", tail).to_string();
-    }
-
-    return format!("[来|こ]{}", tail).to_string();
-}
-
-fn handle_suru(word: &str) -> String {
-    if word == "為る" {
-        return "[為|す]る".to_string();
-    }
-    let tail = word.chars().skip(1).collect::<String>();
-
-    let is_formal = word.starts_with("為ま");
-    let is_te_form = word.starts_with("為て");
-    let is_ta_form = word.starts_with("為た");
-    let is_imperative = word.starts_with("為ろ");
-    if is_formal || is_te_form || is_ta_form || is_imperative {
-        return format!("[為|し]{}", tail).to_string();
-    }
-
-    return format!("[為|さ]{}", tail).to_string();
+    return result_string;
 }
 
 #[cfg(test)]
