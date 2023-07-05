@@ -39,7 +39,7 @@ fn break_up_furigana_into_singles(furigana: Furigana<&str>) -> Vec<Reading> {
         .collect()
 }
 
-fn fit_furigana_onto_word<'a>(
+fn fit_furigana_onto_word(
     furigana: Vec<Reading>,
     mut word: &str,
 ) -> Result<Vec<Reading>, FittingError> {
@@ -63,7 +63,7 @@ fn fit_furigana_onto_word<'a>(
                         return Ok(Reading::new(kana.to_string()));
                     }
 
-                    return Err(FittingError::FuriganaDiffers);
+                    Err(FittingError::FuriganaDiffers)
                 }
                 (None, kana) => {
                     // Assumption: the kana parts can only change at the end of the word
@@ -80,7 +80,7 @@ fn fit_furigana_onto_word<'a>(
                         return Ok(part.clone());
                     }
 
-                    return Err(FittingError::FuriganaDiffers);
+                    Err(FittingError::FuriganaDiffers)
                 }
             }
         })
